@@ -331,6 +331,7 @@ with st.sidebar:
         if topic:
             docs = wiki_search(topic)
             
+    st.write("https://github.com/su2minig/gpt-streamlit")
     st.markdown("```python\n"+code+"\n```")
 
 def format_docs(docs):
