@@ -56,16 +56,6 @@ with st.sidebar:
     user_api_key = st.text_input("Enter your OpenAI API key")
     
     st.write("https://github.com/su2minig/gpt-streamlit")
-
-    if user_api_key:
-        llm = ChatOpenAI(
-            api_key=user_api_key,
-            temperature=0.1,
-            streaming=True,
-            callbacks=[
-                    ChatCallbackHandler(),
-                ],
-        )
         
     code ="""
     from langchain.document_loaders import SitemapLoader
@@ -295,6 +285,15 @@ with st.sidebar:
     """
     st.markdown("```python\n"+code+"\n```")
 
+if user_api_key:
+        llm = ChatOpenAI(
+            api_key=user_api_key,
+            temperature=0.1,
+            streaming=True,
+            callbacks=[
+                    ChatCallbackHandler(),
+                ],
+        )
 
 memory = ConversationBufferMemory(return_messages=True, memory_key="history")
 
