@@ -1,456 +1,464 @@
-import json
-
-from langchain.document_loaders import UnstructuredFileLoader
-from langchain.text_splitter import CharacterTextSplitter
+from langchain.document_loaders import SitemapLoader
+from langchain.schema.runnable import RunnableLambda, RunnablePassthrough
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.vectorstores.faiss import FAISS
+from langchain.embeddings import OpenAIEmbeddings
 from langchain.chat_models import ChatOpenAI
-from langchain.prompts import ChatPromptTemplate
-from langchain.callbacks import StreamingStdOutCallbackHandler
+from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain.memory import ConversationBufferMemory
 import streamlit as st
-from langchain.retrievers import WikipediaRetriever
+from langchain.callbacks.base import BaseCallbackHandler
 
 st.set_page_config(
-    page_title="QuizGPT",
-    page_icon="❓",
+    page_title="SiteGPT",
+    page_icon="🖥️",
 )
 
-st.title("QuizGPT")
 
-@st.cache_data(show_spinner="Loading file...")
-def split_file(file):
-    file_content = file.read()
-    file_path = f"./.cache/quiz_files/{file.name}"
-    with open(file_path, "wb") as f:
-        f.write(file_content)
-    splitter = CharacterTextSplitter.from_tiktoken_encoder(
-        separator="\n",
-        chunk_size=600,
-        chunk_overlap=100,
-    )
-    loader = UnstructuredFileLoader(file_path)
-    docs = loader.load_and_split(text_splitter=splitter)
-    return docs
+def save_message(message, role):
+    st.session_state["messages"].append({"message": message, "role": role})
+    
+def send_message(message, role, save=True):
+    with st.chat_message(role):
+        st.markdown(message)
+    if save:
+        save_message(message, role)
+        
+def paint_history():
+    for message in st.session_state["messages"]:
+        send_message(
+            message["message"],
+            message["role"],
+            save=False,
+        )
+        
+def load_memory(_):
+    return memory.load_memory_variables({})["history"]
 
+class ChatCallbackHandler(BaseCallbackHandler):
+    message = ""
 
-@st.cache_data(show_spinner="Searching Wikipedia...")
-def wiki_search(term):
-    retriever = WikipediaRetriever(top_k_results=5)
-    docs = retriever.get_relevant_documents(term)
-    return docs
+    def on_llm_start(self, *args, **kwargs):
+        self.message_box = st.empty()
 
-function = {
-    "name": "create_quiz",
-    "description": "function that takes a list of questions and answers and returns a quiz",
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "questions": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "question": {
-                            "type": "string",
-                        },
-                        "answers": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "answer": {
-                                        "type": "string",
-                                    },
-                                    "correct": {
-                                        "type": "boolean",
-                                    },
-                                },
-                                "required": ["answer", "correct"],
-                            },
-                        },
-                    },
-                    "required": ["question", "answers"],
-                },
-            }
-        },
-        "required": ["questions"],
-    },
-}
+    def on_llm_end(self, *args, **kwargs):
+        save_message(self.message, "ai")
+
+    def on_llm_new_token(self, token, *args, **kwargs):
+        self.message += token
+        self.message_box.markdown(self.message)
 
 with st.sidebar:
-    api_key = st.text_input("Enter your OpenAI API key")
-    code = """
-    import json
-    from langchain.document_loaders import UnstructuredFileLoader
-    from langchain.text_splitter import CharacterTextSplitter
+    url = st.text_input(
+        "Write down a URL",
+        placeholder="https://example.com",
+    )
+    user_api_key = st.text_input("Enter your OpenAI API key")
+    
+    st.write("https://github.com/su2minig/gpt-streamlit")
+
+    if user_api_key:
+        llm = ChatOpenAI(
+            api_key=user_api_key,
+            temperature=0.1,
+            streaming=True,
+            callbacks=[
+                    ChatCallbackHandler(),
+                ],
+        )
+        
+    code ="""
+    from langchain.document_loaders import SitemapLoader
+    from langchain.schema.runnable import RunnableLambda, RunnablePassthrough
+    from langchain.text_splitter import RecursiveCharacterTextSplitter
+    from langchain.vectorstores.faiss import FAISS
+    from langchain.embeddings import OpenAIEmbeddings
     from langchain.chat_models import ChatOpenAI
-    from langchain.prompts import ChatPromptTemplate
-    from langchain.callbacks import StreamingStdOutCallbackHandler
+    from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
+    from langchain.memory import ConversationBufferMemory
     import streamlit as st
-    from langchain.retrievers import WikipediaRetriever
-    from langchain.schema import BaseOutputParser, output_parser
+    from langchain.callbacks.base import BaseCallbackHandler
 
     st.set_page_config(
-        page_title="QuizGPT",
-        page_icon="❓",
+        page_title="SiteGPT",
+        page_icon="🖥️",
     )
 
-    st.title("QuizGPT")
+    def save_message(message, role):
+        st.session_state["messages"].append({"message": message, "role": role})
+        
+    def send_message(message, role, save=True):
+        with st.chat_message(role):
+            st.markdown(message)
+        if save:
+            save_message(message, role)
+            
+    def paint_history():
+        for message in st.session_state["messages"]:
+            send_message(
+                message["message"],
+                message["role"],
+                save=False,
+            )
+            
+    def load_memory(_):
+        return memory.load_memory_variables({})["history"]
 
-    def format_docs(docs):
-        return "\n\n".join(document.page_content for document in docs)
+    class ChatCallbackHandler(BaseCallbackHandler):
+        message = ""
 
-    questions_prompt = ChatPromptTemplate.from_messages(
+        def on_llm_start(self, *args, **kwargs):
+            self.message_box = st.empty()
+
+        def on_llm_end(self, *args, **kwargs):
+            save_message(self.message, "ai")
+
+        def on_llm_new_token(self, token, *args, **kwargs):
+            self.message += token
+            self.message_box.markdown(self.message)
+            
+    with st.sidebar:
+        url = st.text_input(
+            "Write down a URL",
+            placeholder="https://example.com",
+        )
+        user_api_key = st.text_input("Enter your OpenAI API key")
+        
+        st.write("https://github.com/su2minig/gpt-streamlit")
+
+        if user_api_key:
+            llm = ChatOpenAI(
+                api_key=user_api_key,
+                temperature=0.1,
+                streaming=True,
+                callbacks=[
+                        ChatCallbackHandler(),
+                    ],
+            )
+    
+    memory = ConversationBufferMemory(return_messages=True, memory_key="history")
+
+    answers_prompt = ChatPromptTemplate.from_messages(
         [
             (
                 "system",
-                """"""
-        You are a helpful assistant that is role playing as a teacher.
-            
-        Based ONLY on the following context make 10 (TEN) questions minimum to test the user's knowledge about the text with {level}.
-        
-        If the {level} is hard, make the quiz difficult to solve. If the {level} is easy, make the quiz easy to solve.
-        
-        Each question should have 4 answers, three of them must be incorrect and one should be correct.
-            
-        Use (o) to signal the correct answer.
-            
-        Question examples:
-            
-        Question: What is the color of the ocean?
-        Answers: Red|Yellow|Green|Blue
-            
-        Question: What is the capital or Georgia?
-        Answers: Baku|Tbilisi|Manila|Beirut
-            
-        Question: When was Avatar released?
-        Answers: 2007|2001|2009|1998
-            
-        Question: Who was Julius Caesar?
-        Answers: A Roman Emperor|Painter|Actor|Model
-            
-        Your turn!
-            
-        Context: {context}
-        """""",
-            )
+                """'''
+                Using ONLY the following context answer the user's question. If you can't just say you don't know, don't make anything up.
+                                                            
+                Then, give a score to the answer between 0 and 5.
+                If the answer answers the user question the score should be high, else it should be low.
+                Make sure to always include the answer's score even if it's 0.
+                Context: {context}
+                                                            
+                Examples:
+                                                            
+                Question: How far away is the moon?
+                Answer: The moon is 384,400 km away.
+                Score: 5
+                                                            
+                Question: How far away is the sun?
+                Answer: I don't know
+                Score: 0    
+                '''""",
+            ),
+            ("human", "{question}"),
         ]
     )
 
-    function = {
-        "name": "create_quiz",
-        "description": "function that takes a list of questions and answers and returns a quiz",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "questions": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "question": {
-                                "type": "string",
-                            },
-                            "answers": {
-                                "type": "array",
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "answer": {
-                                            "type": "string",
-                                        },
-                                        "correct": {
-                                            "type": "boolean",
-                                        },
-                                    },
-                                    "required": ["answer", "correct"],
-                                },
-                            },
-                        },
-                        "required": ["question", "answers"],
-                    },
+    def get_answers(inputs):
+        docs = inputs["docs"]
+        question = inputs["question"]
+        
+        answers_chain = answers_prompt | llm
+        return {
+            "question": question,
+            "answers": [
+                {
+                    "answer": answers_chain.invoke(
+                        {"question": question, "context": doc.page_content}
+                    ).content,
+                    "source": doc.metadata["source"],
+                    "date": doc.metadata["lastmod"],
                 }
-            },
-            "required": ["questions"],
-        },
-    }
+                for doc in docs
+            ],
+        }
 
-    llm = ChatOpenAI(
-        temperature=0.1,
-        model="gpt-3.5-turbo-1106",
-        streaming=True,
-        callbacks=[StreamingStdOutCallbackHandler()],
-    ).bind(
-        function_call={
-            "name": "create_quiz",
-        },
-        functions=[
-            function,
-        ],
-    )
-
-    @st.cache_data(show_spinner="Loading file...")
-    def split_file(file):
-        file_content = file.read()
-        file_path = f"./.cache/quiz_files/{file.name}"
-        with open(file_path, "wb") as f:
-            f.write(file_content)
-        splitter = CharacterTextSplitter.from_tiktoken_encoder(
-            separator="\n",
-            chunk_size=600,
-            chunk_overlap=100,
-        )
-        loader = UnstructuredFileLoader(file_path)
-        docs = loader.load_and_split(text_splitter=splitter)
-        return docs
-
-
-    @st.cache_data(show_spinner="Making quiz...")
-    def run_quiz_chain(level, _docs):
-        chain = questions_prompt | llm
-        
-        response = chain.invoke({"level": level,"context": docs})
-        response = json.loads(response.additional_kwargs["function_call"]["arguments"])
-        return response
-
-
-    @st.cache_data(show_spinner="Searching Wikipedia...")
-    def wiki_search(term):
-        retriever = WikipediaRetriever(top_k_results=5)
-        docs = retriever.get_relevant_documents(term)
-        return docs
-    
-    with st.sidebar:
-        api_key = st.text_input("Enter your OpenAI API key")
-        if api_key:
-            llm = ChatOpenAI(
-                api_key=api_key,
-                temperature=0.1,
-                model="gpt-3.5-turbo-1106",
-                streaming=True,
-                callbacks=[StreamingStdOutCallbackHandler()],
-            ).bind(
-                function_call={
-                    "name": "create_quiz",
-                },
-                functions=[
-                    function,
-                ],
-            )
-        
-        docs = None
-        choice = st.selectbox(
-            "Choose what you want to use.",
+    choose_prompt = ChatPromptTemplate.from_messages(
+        [
             (
-                "File",
-                "Wikipedia Article",
+                "system",
+                """'''
+                Use ONLY the following pre-existing answers to answer the user's question.
+                Use the answers that have the highest score (more helpful) and favor the most recent ones.
+                Cite sources and return the sources of the answers as they are, do not change them.
+                Answers: {answers}
+                '''""",
             ),
-        )
-        if choice == "File":
-            file = st.file_uploader(
-                "Upload a .docx , .txt or .pdf file",
-                type=["pdf", "txt", "docx"],
-            )
-            if file:
-                docs = split_file(file)
-        else:
-            topic = st.text_input("Search Wikipedia...")
-            if topic:
-                docs = wiki_search(topic)
-    if not docs:
-        st.markdown(
-            """"""
-        Welcome to QuizGPT.
-                    
-        I will make a quiz from Wikipedia articles or files you upload to test your knowledge and help you study.
-                    
-        Get started by uploading a file or searching on Wikipedia in the sidebar.
-        """"""
-        )
-    else:
-        with st.form("Level"):
-            level = st.radio(
-                "Select the level of difficulty.",
-                ["Easy","Hard"],
-                index=None,
-            )
-            level_button = st.form_submit_button()
-            if level_button:
-                st.session_state["level"]=level
-            
-        st.write(level)
-        if st.session_state["level"]!=None:
-            response = run_quiz_chain(level, docs)
-            with st.form("questions_form"):
-                correct_answers = 0
-                answered_questions = 0
-                total_questions = len(response["questions"])
-                answers = {}
-                
-                for question in response["questions"]:
-                    st.write(question["question"])
-                    value = st.radio(
-                        "Select an option.",
-                        [answer["answer"] for answer in question["answers"]],
-                        index=None,
-                        key=question["question"],
-                    )
-                    if value:
-                        answered_questions += 1
-                        answers[question["question"]] = value
-                    
-                    if {"answer": value, "correct": True} in question["answers"]:
-                        correct_answers += 1
-                        st.success("Correct!")
-                    elif value is not None:
-                        st.error("Wrong!")
-
-                    if correct_answers == total_questions:
-                        st.balloons()
-                        st.success("Congratulations! You answered all questions correctly.")
-                
-                button = st.form_submit_button()
-    """
-    
-
-    docs = None
-    choice = st.selectbox(
-        "Choose what you want to use.",
-        (
-            "File",
-            "Wikipedia Article",
-        ),
+            ("human", "{question}"),
+        ]
     )
-    if choice == "File":
-        file = st.file_uploader(
-            "Upload a .docx , .txt or .pdf file",
-            type=["pdf", "txt", "docx"],
+
+    def choose_answer(inputs):
+        answers = inputs["answers"]
+        question = inputs["question"]
+        
+        choose_chain = choose_prompt | llm
+        condensed = "\n\n".join(
+            f"{answer['answer']}\nSource:{answer['source']}\nDate:{answer['date']}\n"
+            for answer in answers
         )
-        if file:
-            docs = split_file(file)
+        return choose_chain.invoke(
+            {
+                "question": question,
+                "answers": condensed,
+            }
+        )
+
+    def parse_page(soup):
+        header = soup.find("header")
+        footer = soup.find("footer")
+        if header:
+            header.decompose()
+        if footer:
+            footer.decompose()
+        return (
+            str(soup.get_text())
+            .replace("\n", " ")
+            .replace("\xa0", " ")
+            .replace("CloseSearch Submit Blog", "")
+        )
+
+    @st.cache_data(show_spinner="Loading website...")
+    def load_website(url):
+        splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
+            chunk_size=1000,
+            chunk_overlap=200,
+        )
+        loader = SitemapLoader(
+            url,
+            filter_urls=[
+                "https://developers.cloudflare.com/ai-gateway/",
+                "https://developers.cloudflare.com/vectorize/",
+                "https://developers.cloudflare.com/workers-ai/",
+            ],
+            parsing_function=parse_page,
+        )
+        loader.requests_per_second = 2
+        docs = loader.load_and_split(text_splitter=splitter)
+        vector_store = FAISS.from_documents(docs, OpenAIEmbeddings())
+        return vector_store.as_retriever()
+
+    st.markdown(
+        """'''
+        # SiteGPT
+                
+        Ask questions about the content of a website.
+                
+        Start by writing the URL of the website on the sidebar.
+    '''"""
+    )
+
+        
+    def invoke_chain(question):
+        result = chain.invoke(question)
+        memory.save_context(
+            {"input": question},
+            {"output": result.content},
+        )
+        result = result.content.replace("$", "\$")
+        return result
+
+    if url:
+        if ".xml" not in url:
+            with st.sidebar:
+                st.error("Please write down a Sitemap URL.")
+        else:
+            retriever = load_website(url)
+            send_message("I'm ready! Ask away!", "ai", save=False)
+            paint_history()
+            message = st.text_input("Ask a question to the website.")
+            if message:
+                send_message(message, "human")
+                chain = (
+                    {
+                        "docs": retriever,
+                        "question": RunnablePassthrough(),
+                    }
+                    | RunnableLambda(get_answers)
+                    | RunnableLambda(choose_answer)
+                )
+                with st.chat_message("ai"):
+                    invoke_chain(message)
     else:
-        topic = st.text_input("Search Wikipedia...")
-        if topic:
-            docs = wiki_search(topic)
-            
-    st.write("https://github.com/su2minig/gpt-streamlit")
+        st.session_state["messages"] = []
+    """
     st.markdown("```python\n"+code+"\n```")
 
-def format_docs(docs):
-    return "\n\n".join(document.page_content for document in docs)
 
-questions_prompt = ChatPromptTemplate.from_messages(
+memory = ConversationBufferMemory(return_messages=True, memory_key="history")
+
+answers_prompt = ChatPromptTemplate.from_messages(
     [
         (
             "system",
             """
-    You are a helpful assistant that is role playing as a teacher.
-         
-    Based ONLY on the following context make 10 (TEN) questions minimum to test the user's knowledge about the text with {level}.
-    
-    If the {level} is hard, make the quiz difficult to solve. If the {level} is easy, make the quiz easy to solve.
-    
-    Each question should have 4 answers, three of them must be incorrect and one should be correct.
-         
-    Use (o) to signal the correct answer.
-         
-    Question examples:
-         
-    Question: What is the color of the ocean?
-    Answers: Red|Yellow|Green|Blue
-         
-    Question: What is the capital or Georgia?
-    Answers: Baku|Tbilisi|Manila|Beirut
-         
-    Question: When was Avatar released?
-    Answers: 2007|2001|2009|1998
-         
-    Question: Who was Julius Caesar?
-    Answers: A Roman Emperor|Painter|Actor|Model
-         
-    Your turn!
-         
-    Context: {context}
-""",
-        )
+            Using ONLY the following context answer the user's question. If you can't just say you don't know, don't make anything up.
+                                                        
+            Then, give a score to the answer between 0 and 5.
+            If the answer answers the user question the score should be high, else it should be low.
+            Make sure to always include the answer's score even if it's 0.
+            Context: {context}
+                                                        
+            Examples:
+                                                        
+            Question: How far away is the moon?
+            Answer: The moon is 384,400 km away.
+            Score: 5
+                                                        
+            Question: How far away is the sun?
+            Answer: I don't know
+            Score: 0    
+            """,
+        ),
+        ("human", "{question}"),
     ]
 )
 
 
-if api_key:
-        llm = ChatOpenAI(
-            api_key=api_key,
-            temperature=0.1,
-            model="gpt-3.5-turbo-1106",
-            streaming=True,
-            callbacks=[StreamingStdOutCallbackHandler()],
-        ).bind(
-            function_call={
-                "name": "create_quiz",
-            },
-            functions=[
-                function,
-            ],
-        )
-
-
-@st.cache_data(show_spinner="Making quiz...")
-def run_quiz_chain(level, _docs):
-    chain = questions_prompt | llm
+def get_answers(inputs):
+    docs = inputs["docs"]
+    question = inputs["question"]
     
-    response = chain.invoke({"level": level,"context": docs})
-    response = json.loads(response.additional_kwargs["function_call"]["arguments"])
-    return response
+    answers_chain = answers_prompt | llm
+    return {
+        "question": question,
+        "answers": [
+            {
+                "answer": answers_chain.invoke(
+                    {"question": question, "context": doc.page_content}
+                ).content,
+                "source": doc.metadata["source"],
+                "date": doc.metadata["lastmod"],
+            }
+            for doc in docs
+        ],
+    }
 
 
-if not docs:
-    st.markdown(
-        """
-    Welcome to QuizGPT.
-                
-    I will make a quiz from Wikipedia articles or files you upload to test your knowledge and help you study.
-                
-    Get started by uploading a file or searching on Wikipedia in the sidebar.
-    """
+choose_prompt = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            """
+            Use ONLY the following pre-existing answers to answer the user's question.
+
+            Use the answers that have the highest score (more helpful) and favor the most recent ones.
+
+            Cite sources and return the sources of the answers as they are, do not change them.
+
+            Answers: {answers}
+            """,
+        ),
+        ("human", "{question}"),
+    ]
+)
+
+
+def choose_answer(inputs):
+    answers = inputs["answers"]
+    question = inputs["question"]
+    
+    choose_chain = choose_prompt | llm
+    condensed = "\n\n".join(
+        f"{answer['answer']}\nSource:{answer['source']}\nDate:{answer['date']}\n"
+        for answer in answers
     )
-else:
-    with st.form("Level"):
-        level = st.radio(
-            "Select the level of difficulty.",
-            ["Easy","Hard"],
-            index=None,
-        )
-        level_button = st.form_submit_button()
-        if level_button:
-            st.session_state["level"]=level
-        
-    st.write(level)
-    if st.session_state["level"]!=None:
-        response = run_quiz_chain(level, docs)
-        with st.form("questions_form"):
-            correct_answers = 0
-            answered_questions = 0
-            total_questions = len(response["questions"])
-            answers = {}
-            
-            for question in response["questions"]:
-                st.write(question["question"])
-                value = st.radio(
-                    "Select an option.",
-                    [answer["answer"] for answer in question["answers"]],
-                    index=None,
-                    key=question["question"],
-                )
-                if value:
-                    answered_questions += 1
-                    answers[question["question"]] = value
-                
-                if {"answer": value, "correct": True} in question["answers"]:
-                    correct_answers += 1
-                    st.success("Correct!")
-                elif value is not None:
-                    st.error("Wrong!")
+    return choose_chain.invoke(
+        {
+            "question": question,
+            "answers": condensed,
+        }
+    )
 
-                if correct_answers == total_questions:
-                    st.balloons()
-                    st.success("Congratulations! You answered all questions correctly.")
+
+def parse_page(soup):
+    header = soup.find("header")
+    footer = soup.find("footer")
+    if header:
+        header.decompose()
+    if footer:
+        footer.decompose()
+    return (
+        str(soup.get_text())
+        .replace("\n", " ")
+        .replace("\xa0", " ")
+        .replace("CloseSearch Submit Blog", "")
+    )
+
+
+@st.cache_data(show_spinner="Loading website...")
+def load_website(url):
+    splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
+        chunk_size=1000,
+        chunk_overlap=200,
+    )
+    loader = SitemapLoader(
+        url,
+        filter_urls=[
+            "https://developers.cloudflare.com/ai-gateway/",
+            "https://developers.cloudflare.com/vectorize/",
+            "https://developers.cloudflare.com/workers-ai/",
+        ],
+        parsing_function=parse_page,
+    )
+    loader.requests_per_second = 2
+    docs = loader.load_and_split(text_splitter=splitter)
+    vector_store = FAISS.from_documents(docs, OpenAIEmbeddings())
+    return vector_store.as_retriever()
+
+
+st.markdown(
+    """
+    # SiteGPT
             
-                button = st.form_submit_button()
+    Ask questions about the content of a website.
+            
+    Start by writing the URL of the website on the sidebar.
+"""
+)
+
+    
+def invoke_chain(question):
+    result = chain.invoke(question)
+    memory.save_context(
+        {"input": question},
+        {"output": result.content},
+    )
+    result = result.content.replace("$", "\$")
+    return result
+
+
+if url:
+    if ".xml" not in url:
+        with st.sidebar:
+            st.error("Please write down a Sitemap URL.")
+    else:
+        retriever = load_website(url)
+        send_message("I'm ready! Ask away!", "ai", save=False)
+        paint_history()
+        message = st.text_input("Ask a question to the website.")
+        if message:
+            send_message(message, "human")
+            chain = (
+                {
+                    "docs": retriever,
+                    "question": RunnablePassthrough(),
+                }
+                | RunnableLambda(get_answers)
+                | RunnableLambda(choose_answer)
+            )
+            with st.chat_message("ai"):
+                invoke_chain(message)
+else:
+    st.session_state["messages"] = []
