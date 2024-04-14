@@ -1,6 +1,6 @@
-from langchain.utilities import DuckDuckGoSearchAPIWrapper, WikipediaAPIWrapper
+from langchain.utilities.duckduckgo_search import DuckDuckGoSearchAPIWrapper
+from langchain.utilities.wikipedia import WikipediaAPIWrapper
 from langchain.agents.agent_toolkits import FileManagementToolkit
-import yfinance
 import json
 import streamlit as st
 import openai as client
@@ -126,7 +126,7 @@ def save_api_key(api_key):
 def make_assistant():
   assistant = client.beta.assistants.create(
         name="Search Assistant",
-        instructions="You search for user questions and convert the results into a txt file",
+        instructions="Please provide a query to search on Wikipedia or DuckDuckGo. For example, say 'Search Wikipedia for XZ backdoor'",
         model="gpt-4-1106-preview",
         tools=functions,
       )
@@ -244,12 +244,12 @@ if assistant_id and (st.session_state["assistant_id_bool"]==True):
   if message:
     send_message(message, "human")
     thread = make_thread(message)
-    st.write(thread)
     
     run = run_thread(thread.id, assistant_id)
     
-    st.write(get_run(run.id, thread.id).status) # in_progress..?
+    st.write(get_run(run.id, thread.id).status)
     
+    st.write(get_run(run.id, thread.id))
     # get_tool_outputs(run.id, thread.id)
     # submit_tool_outputs(run.id, thread.id)
 else:
