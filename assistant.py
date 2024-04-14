@@ -5,6 +5,7 @@ import json
 import streamlit as st
 import openai as client
 import re
+import time
 
 api_pattern = r'sk-.*'
 
@@ -26,13 +27,10 @@ def get_search_duck(inputs):
   return ddg.run(query)
 
 def get_txt(inputs):
-  tools = FileManagementToolkit(
-      root_dir=str(".txt/"),
-      selected_tools=["read_file", "write_file", "list_directory"],
-    ).get_tools()
-  read_tool, write_tool, list_tool = tools
-  output = inputs["output"]
-  return write_tool.invoke({"file_path": "output.txt", "text": output})
+  data = inputs["data"]
+  with open("output.txt", "w", encoding="utf-8") as f:
+    f.write(data)
+  return "Data saved to output.txt"
 
 def save_message(message, role):
     st.session_state["messages"].append({"message": message, "role": role})
@@ -90,16 +88,16 @@ functions = [
     "type": "function",
     "function": {
       "name": "get_txt",
-      "description": "Converts the output to a text file",
+      "description": "Saves the given data to a file",
       "parameters": {
         "type": "object",
         "properties": {
-          "output": {
+          "data": {
             "type": "string",
-            "description": "The output to convert to a text file",
+            "description": "The data to save",
           },
         },
-        "required": ["output"],
+        "required": ["data"],
       },
     },
   },
@@ -171,6 +169,8 @@ with st.sidebar:
     save_assistant_id(assistant_id)
     if assistant_id == "":
         st.write("Assistant_ID를 넣어주세요.")
+  
+  st.write("https://github.com/su2minig/gpt-streamlit/tree/main")
     
 st.markdown(
     """
@@ -246,11 +246,28 @@ if assistant_id and (st.session_state["assistant_id_bool"]==True):
     thread = make_thread(message)
     
     run = run_thread(thread.id, assistant_id)
-    
-    st.write(get_run(run.id, thread.id).status)
-    
-    st.write(get_run(run.id, thread.id))
-    # get_tool_outputs(run.id, thread.id)
-    # submit_tool_outputs(run.id, thread.id)
+    st.write(run.id)
+    if run.id != "":
+      run = get_run(run.id, thread.id)
+      if run.status == "completed":
+        st.success("completed")
+        get_messages(thread.id)
+        with open("output.txt", "rb") as f:
+          btn = st.download_button(
+            label="Download",
+            data=f,
+            file_name="output.txt",
+            mime="text/plain",
+          )
+    elif run.status == "in_progress":
+      with st.status("running"):
+        st.write(run.status)
+        time.sleep(5)
+        st.rerun()
+    elif run.status == "requires_action":
+      with st.status("requires_action"):
+        submit_tool_outputs(run.id, thread.id)
+        time.sleep(5)
+        st.rerun()
 else:
   st.session_state["messages"] = []
