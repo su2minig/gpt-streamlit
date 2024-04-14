@@ -1,7 +1,5 @@
 from langchain.utilities.duckduckgo_search import DuckDuckGoSearchAPIWrapper
 from langchain.utilities.wikipedia import WikipediaAPIWrapper
-from langchain.agents.agent_toolkits import FileManagementToolkit
-import json
 import streamlit as st
 import openai as client
 import re
