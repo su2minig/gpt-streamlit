@@ -119,13 +119,13 @@ def save_assistant_id(assistant_id):
 def save_api_key(api_key):
     st.session_state["api_key"] = api_key
     
-def make_assistant():
-  assistant = client.beta.assistants.create(
-        name="Search Assistant",
-        instructions="Please provide a query to search on Wikipedia or DuckDuckGo. For example, say 'Search Wikipedia for XZ backdoor'",
-        model="gpt-4-1106-preview",
-        tools=functions,
-      )
+# def make_assistant():
+#   assistant = client.beta.assistants.create(
+#         name="Search Assistant",
+#         instructions="Please provide a query to search on Wikipedia or DuckDuckGo. For example, say 'Search Wikipedia for XZ backdoor'",
+#         model="gpt-4-1106-preview",
+#         tools=functions,
+#       )
   
   
 with st.sidebar:
@@ -133,7 +133,8 @@ with st.sidebar:
   
   if api_key:
     if api_key != st.session_state["api_key"]:
-      make_assistant()
+      pass
+      # make_assistant()
     else:
       st.write("동일한 API_KEY입니다")
       
@@ -237,37 +238,37 @@ def submit_tool_outputs(run_id, thread_id):
       run_id=run_id, thread_id=thread_id, tool_outputs=outpus
   )
 
-if assistant_id and (st.session_state["assistant_id_bool"]==True):
-  send_message("I'm ready! Ask away!", "assistant", save=False)
-  paint_history()
-  message = st.text_input("Ask a question")
-  if message:
-    send_message(message, "human")
-    thread = make_thread(message)
+# if assistant_id and (st.session_state["assistant_id_bool"]==True):
+#   send_message("I'm ready! Ask away!", "assistant", save=False)
+#   paint_history()
+#   message = st.text_input("Ask a question")
+#   if message:
+#     send_message(message, "human")
+#     thread = make_thread(message)
     
-    run = run_thread(thread.id, assistant_id)
-    st.write(run.id)
-    # if run.id != "":
-    #   run = get_run(run.id, thread.id)
-    #   if run.status == "completed":
-    #     st.success("completed")
-    #     get_messages(thread.id)
-    #     with open("output.txt", "rb") as f:
-    #       btn = st.download_button(
-    #         label="Download",
-    #         data=f,
-    #         file_name="output.txt",
-    #         mime="text/plain",
-    #       )
-    # elif run.status == "in_progress":
-    #   with st.status("running"):
-    #     st.write(run.status)
-    #     time.sleep(5)
-    #     st.rerun()
-    # elif run.status == "requires_action":
-    #   with st.status("requires_action"):
-    #     submit_tool_outputs(run.id, thread.id)
-    #     time.sleep(5)
-    #     st.rerun()
-else:
-  st.session_state["messages"] = []
+#     run = run_thread(thread.id, assistant_id)
+#     st.write(run.id)
+#     if run.id != "":
+#       run = get_run(run.id, thread.id)
+#       if run.status == "completed":
+#         st.success("completed")
+#         get_messages(thread.id)
+#         with open("output.txt", "rb") as f:
+#           btn = st.download_button(
+#             label="Download",
+#             data=f,
+#             file_name="output.txt",
+#             mime="text/plain",
+#           )
+#     elif run.status == "in_progress":
+#       with st.status("running"):
+#         st.write(run.status)
+#         time.sleep(5)
+#         st.rerun()
+#     elif run.status == "requires_action":
+#       with st.status("requires_action"):
+#         submit_tool_outputs(run.id, thread.id)
+#         time.sleep(5)
+#         st.rerun()
+# else:
+#   st.session_state["messages"] = []
