@@ -1,28 +1,46 @@
-from langchain.document_loaders import SitemapLoader
-from langchain.schema.runnable import RunnableLambda, RunnablePassthrough
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.vectorstores.faiss import FAISS
-from langchain.embeddings import OpenAIEmbeddings
-from langchain.chat_models import ChatOpenAI
-from langchain.prompts import ChatPromptTemplate
-from langchain.memory import ConversationBufferMemory
+from langchain.utilities.duckduckgo_search import DuckDuckGoSearchAPIWrapper
+from langchain.utilities.wikipedia import WikipediaAPIWrapper
+from langchain.agents.agent_toolkits import FileManagementToolkit
+import json
 import streamlit as st
-from langchain.callbacks.base import BaseCallbackHandler
+import openai as client
+import re
+import time
+
+api_pattern = r'sk-.*'
+
+assistant_pattern = r'asst_.*'
 
 st.set_page_config(
     page_title="Assistants",
     page_icon="🖥️",
 )
 
+def get_search_wikipedia(inputs):
+  wiki = WikipediaAPIWrapper()
+  query = inputs["query"]
+  return wiki.run(query)
+  
+def get_search_duck(inputs):
+  ddg = DuckDuckGoSearchAPIWrapper()
+  query = inputs["query"]
+  return ddg.run(query)
+
+def get_txt(inputs):
+  data = inputs["data"]
+  with open("output.txt", "w", encoding="utf-8") as f:
+    f.write(data)
+  return "Data saved to output.txt"
+
 def save_message(message, role):
     st.session_state["messages"].append({"message": message, "role": role})
-    
+
 def send_message(message, role, save=True):
     with st.chat_message(role):
         st.markdown(message)
     if save:
         save_message(message, role)
-        
+
 def paint_history():
     for message in st.session_state["messages"]:
         send_message(
@@ -30,211 +48,226 @@ def paint_history():
             message["role"],
             save=False,
         )
-        
-def load_memory(_):
-    return memory.load_memory_variables({})["history"]
 
-class ChatCallbackHandler(BaseCallbackHandler):
-    message = ""
+functions = [
+  {
+    "type": "function",
+    "function": {
+      "name": "get_search_wikipedia",
+      "description": "Use this tool to find the website for the given query",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The query you will search for.Example query: Research about the XZ backdoor",
+          },
+        },
+        "required": ["query"],
+      },
+    },
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "get_search_duck",
+      "description": "Use this tool to find the website for the given query",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The query you will search for.Example query: Research about the XZ backdoor",
+          },
+        },
+        "required": ["query"],
+      },
+    },
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "get_txt",
+      "description": "Saves the given data to a file",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "string",
+            "description": "The data to save",
+          },
+        },
+        "required": ["data"],
+      },
+    },
+  },
+]
 
-    def on_llm_start(self, *args, **kwargs):
-        self.message_box = st.empty()
+if "api_key" not in st.session_state:
+  st.session_state["api_key"] = None
 
-    def on_llm_end(self, *args, **kwargs):
-        save_message(self.message, "ai")
+if "api_key_bool" not in st.session_state:
+  st.session_state["api_key_bool"] = False
 
-    def on_llm_new_token(self, token, *args, **kwargs):
-        self.message += token
-        self.message_box.markdown(self.message)
+if "assistant_id" not in st.session_state:
+  st.session_state["assistant_id"] = None
+  
+if "assistant_id_bool" not in st.session_state:
+  st.session_state["assistant_id_bool"] = False
+  
+def save_assistant_id(assistant_id):
+  st.session_state["assistant_id"] = assistant_id
 
-
+def save_api_key(api_key):
+    st.session_state["api_key"] = api_key
+    
+def make_assistant():
+  assistant = client.beta.assistants.create(
+        name="Search Assistant",
+        instructions="Please provide a query to search on Wikipedia or DuckDuckGo. For example, say 'Search Wikipedia for XZ backdoor'",
+        model="gpt-4-1106-preview",
+        tools=functions,
+      )
+  
+  
 with st.sidebar:
-    url = st.text_input(
-        "Write down a URL",
-        placeholder="https://example.com",
-    )
-    api_key = st.text_input("Enter your OpenAI API key")
-    st.write("https://github.com/su2minig/gpt-streamlit")
-        
-    code ="""
+  api_key = st.text_input("Enter your OpenAI API key")
+  
+  if api_key:
+    if api_key != st.session_state["api_key"]:
+      make_assistant()
+    else:
+      st.write("동일한 API_KEY입니다")
+      
+    save_api_key(api_key)
+    if not re.match(api_pattern, api_key):
+        st.write("API_KEY가 올바르지 않습니다.")
+    else:
+        st.write("API_KEY가 올바르게 저장되었습니다.")
+  
+  api_key_button = st.button("api키 저장")
+  
+  if api_key_button:
+    save_api_key(api_key)
+    st.session_state["store_click"] = True
+    if api_key == "":
+        st.write("API_KEY를 넣어주세요.")
+            
+  assistant_id = st.text_input("Enter your assistant ID")
+  
+  if assistant_id:
+    save_assistant_id(assistant_id)
+    if not re.match(assistant_pattern, assistant_id):
+      st.write("Assistant_ID가 올바르지 않습니다.")
+    else:
+      st.write("Assistant_ID가 올바르게 저장되었습니다.")
+      st.session_state["assistant_id_bool"] = True
+      
+  assistant_id_button = st.button("어시스턴트 저장")
+  
+  if assistant_id_button:
+    save_assistant_id(assistant_id)
+    if assistant_id == "":
+        st.write("Assistant_ID를 넣어주세요.")
+  
+  st.write("https://github.com/su2minig/gpt-streamlit/tree/main")
     
-    """
-    st.markdown("```python\n"+code+"\n```")
-    
-if not api_key:
-    st.warning("Please provide an **:blue[OpenAI API Key]** on the sidebar.")
-
-memory = ConversationBufferMemory(return_messages=True, memory_key="history")
-
-answers_prompt = ChatPromptTemplate.from_messages(
-    [
-        (
-            "system",
-            """
-            Using ONLY the following context answer the user's question. If you can't just say you don't know, don't make anything up.
-                                                        
-            Then, give a score to the answer between 0 and 5.
-            If the answer answers the user question the score should be high, else it should be low.
-            Make sure to always include the answer's score even if it's 0.
-            Context: {context}
-                                                        
-            Examples:
-                                                        
-            Question: How far away is the moon?
-            Answer: The moon is 384,400 km away.
-            Score: 5
-                                                        
-            Question: How far away is the sun?
-            Answer: I don't know
-            Score: 0    
-            """,
-        ),
-        ("human", "{question}"),
-    ]
-)
-if api_key:
-    llm = ChatOpenAI(
-        api_key=api_key,
-        temperature=0.1,
-        callbacks=[
-            ChatCallbackHandler(),
-            ],
-    )
-
-
-def get_answers(inputs):
-    docs = inputs["docs"]
-    question = inputs["question"]
-    
-    answers_chain = answers_prompt | llm
-    return {
-        "question": question,
-        "answers": [
-            {
-                "answer": answers_chain.invoke(
-                    {"question": question, "context": doc.page_content}
-                ).content,
-                "source": doc.metadata["source"],
-                "date": doc.metadata["lastmod"],
-            }
-            for doc in docs
-        ],
-    }
-
-
-choose_prompt = ChatPromptTemplate.from_messages(
-    [
-        (
-            "system",
-            """
-            Use ONLY the following pre-existing answers to answer the user's question.
-
-            Use the answers that have the highest score (more helpful) and favor the most recent ones.
-
-            Cite sources and return the sources of the answers as they are, do not change them.
-
-            Answers: {answers}
-            """,
-        ),
-        ("human", "{question}"),
-    ]
-)
-
-
-def choose_answer(inputs):
-    answers = inputs["answers"]
-    question = inputs["question"]
-    llm.streaming = True
-    
-    choose_chain = choose_prompt | llm
-    condensed = "\n\n".join(
-        f"{answer['answer']}\nSource:{answer['source']}\nDate:{answer['date']}\n"
-        for answer in answers
-    )
-    return choose_chain.invoke(
-        {
-            "question": question,
-            "answers": condensed,
-        }
-    )
-
-
-def parse_page(soup):
-    header = soup.find("header")
-    footer = soup.find("footer")
-    if header:
-        header.decompose()
-    if footer:
-        footer.decompose()
-    return (
-        str(soup.get_text())
-        .replace("\n", " ")
-        .replace("\xa0", " ")
-        .replace("CloseSearch Submit Blog", "")
-    )
-
-
-@st.cache_data(show_spinner="Loading website...")
-def load_website(url):
-    splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
-        chunk_size=1000,
-        chunk_overlap=200,
-    )
-    loader = SitemapLoader(
-        url,
-        filter_urls=[
-            "https://developers.cloudflare.com/ai-gateway/",
-            "https://developers.cloudflare.com/vectorize/",
-            "https://developers.cloudflare.com/workers-ai/",
-        ],
-        parsing_function=parse_page,
-    )
-    loader.requests_per_second = 2
-    docs = loader.load_and_split(text_splitter=splitter)
-    vector_store = FAISS.from_documents(docs, OpenAIEmbeddings(api_key=api_key))
-    return vector_store.as_retriever()
-
-
 st.markdown(
     """
-    # SiteGPT
-            
-    Ask questions about the content of a website.
-            
-    Start by writing the URL of the website on the sidebar.
+    # Assistants
 """
 )
 
-    
-def invoke_chain(question):
-    result = chain.invoke(question)
-    memory.save_context(
-        {"input": question},
-        {"output": result.content},
+def get_run(run_id, thread_id):
+    return client.beta.threads.runs.retrieve(
+        run_id=run_id,
+        thread_id=thread_id,
     )
-    result = result.content.replace("$", "\$")
-    return result
 
-if url and api_key:
-    if ".xml" not in url:
-        with st.sidebar:
-            st.error("Please write down a Sitemap URL.")
-    else:
-        retriever = load_website(url)
-        send_message("I'm ready! Ask away!", "ai", save=False)
-        paint_history()
-        message = st.text_input("Ask a question to the website.")
-        if message:
-            send_message(message, "human")
-            chain = (
-                {
-                    "docs": retriever,
-                    "question": RunnablePassthrough(),
-                }
-                | RunnableLambda(get_answers)
-                | RunnableLambda(choose_answer)
-            )
-            with st.chat_message("ai"):
-                invoke_chain(message)
+def get_messages(thread_id):
+    messages = client.beta.threads.messages.list(thread_id=thread_id)
+    messages = list(messages)
+    messages.reverse()
+    for message in messages:
+        print(f"{message.role}: {message.content[0].text.value}")
+
+def make_thread(message):
+  thread = client.beta.threads.create(
+      messages=[
+        {
+          "role": "user",
+          "content": message,
+        }
+      ]
+    )
+  return thread
+
+def run_thread(thread_id, assistant_id):
+  run = client.beta.threads.runs.create(
+      thread_id=thread_id,
+      assistant_id=assistant_id,
+    )
+  return run
+
+functions_map = {
+  "get_search_wikipedia": get_search_wikipedia,
+  "get_search_duck": get_search_duck,
+  "get_txt": get_txt,
+}
+
+def get_tool_outputs(run_id, thread_id):
+    run = get_run(run_id, thread.id)
+    outputs = []
+    st.write(run)
+    for action in run.required_action.submit_tool_outputs.tool_calls:
+      action_id = action.id
+      function = action.function
+      print(f"Calling function: {function.name} with arg {function.arguments}")
+      outputs.append(
+          {
+              "output": functions_map[function.name](json.loads(function.arguments)),
+              "tool_call_id": action_id,
+          }
+      )
+    return outputs
+  
+def submit_tool_outputs(run_id, thread_id):
+  outpus = get_tool_outputs(run_id, thread_id)
+  return client.beta.threads.runs.submit_tool_outputs(
+      run_id=run_id, thread_id=thread_id, tool_outputs=outpus
+  )
+
+if assistant_id and (st.session_state["assistant_id_bool"]==True):
+  send_message("I'm ready! Ask away!", "assistant", save=False)
+  paint_history()
+  message = st.text_input("Ask a question")
+  if message:
+    send_message(message, "human")
+    thread = make_thread(message)
+    
+    run = run_thread(thread.id, assistant_id)
+    st.write(run.id)
+    if run.id != "":
+      run = get_run(run.id, thread.id)
+      if run.status == "completed":
+        st.success("completed")
+        get_messages(thread.id)
+        with open("output.txt", "rb") as f:
+          btn = st.download_button(
+            label="Download",
+            data=f,
+            file_name="output.txt",
+            mime="text/plain",
+          )
+    elif run.status == "in_progress":
+      with st.status("running"):
+        st.write(run.status)
+        time.sleep(5)
+        st.rerun()
+    elif run.status == "requires_action":
+      with st.status("requires_action"):
+        submit_tool_outputs(run.id, thread.id)
+        time.sleep(5)
+        st.rerun()
 else:
-    st.session_state["messages"] = []
+  st.session_state["messages"] = []
